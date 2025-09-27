@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -12,11 +13,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.profilecard.ui.theme.ProfileCardTheme
@@ -47,6 +53,14 @@ fun ProfileCard(
     bio: String,
     modifier: Modifier = Modifier
 ) {
+
+    var isFollowing by rememberSaveable { mutableStateOf(false) }
+    var followers by rememberSaveable { mutableStateOf(100) }
+    val followColor by animateColorAsState(
+        targetValue = if (isFollowing) Color.Red else Color.White
+        , label = "followColor"
+    )
+
     Box(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
@@ -71,10 +85,25 @@ fun ProfileCard(
             Text(text = name, style = MaterialTheme.typography.titleMedium)
             Text(text = bio, style = MaterialTheme.typography.bodyMedium)
 
+            Text(modifier = Modifier
+                .padding(top = 8.dp)
+                .fillMaxWidth(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.Gray,
+                textAlign = TextAlign.Center,
+                text = "$followers Followers")
+
             Spacer(Modifier.height(12.dp))
 
-            Button(onClick = { }) {
-                Text("Follow")
+            Button(onClick = {
+                if (isFollowing)
+                    followers--
+                else followers++
+                isFollowing = !isFollowing},
+                colors = ButtonDefaults.buttonColors(containerColor = followColor)
+            ) {
+                Text(if (isFollowing) "Unfollow" else "Follow",
+                    color = (if (isFollowing) Color.White else Color.Black))
             }
         }
     }
