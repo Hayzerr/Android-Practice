@@ -8,17 +8,15 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,6 +44,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+data class Follower(val id: Int, val name: String, val isFollowing: Boolean)
+
 @Composable
 fun ProfileScreen(
     screenTitle: String,
@@ -56,8 +56,12 @@ fun ProfileScreen(
     val scope = rememberCoroutineScope()
 
     var isFollowing by rememberSaveable { mutableStateOf(false) }
-    var followers by rememberSaveable { mutableStateOf(100) }
+    var followersCount by rememberSaveable { mutableStateOf(100) }
     var showUnfollowDialog by rememberSaveable { mutableStateOf(false) }
+
+    var followerList by rememberSaveable {
+        mutableStateOf(List(10) { i -> Follower(i, "Follower $i", isFollowing = false) })
+    }
 
     if (showUnfollowDialog) {
         AlertDialog(
@@ -68,7 +72,7 @@ fun ProfileScreen(
                 TextButton(onClick = {
                     if (isFollowing) {
                         isFollowing = false
-                        followers = (followers - 1).coerceAtLeast(0)
+                        followersCount = (followersCount - 1).coerceAtLeast(0)
                     }
                     showUnfollowDialog = false
                 }) { Text("Unfollow") }
@@ -82,42 +86,65 @@ fun ProfileScreen(
     Scaffold(
         topBar = {
             @OptIn(ExperimentalMaterial3Api::class)
-            CenterAlignedTopAppBar(
-                title = { Text(screenTitle) }
-            )
+            CenterAlignedTopAppBar(title = { Text(screenTitle) })
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
-        ProfileCard(
-            name = name,
-            bio = bio,
-            isFollowing = isFollowing,
-            followers = followers,
-            onFollowClick = {
-                isFollowing = true
-                followers += 1
-                scope.launch {
-                    val res = snackbarHostState.showSnackbar(
-                        message = "Now following $name",
-                        actionLabel = "Undo",
-                        withDismissAction = true,
-                        duration = SnackbarDuration.Short
-                    )
-                    if (res == SnackbarResult.ActionPerformed) {
-                        isFollowing = false
-                        followers = (followers - 1).coerceAtLeast(0)
-                        snackbarHostState.showSnackbar("Undid follow")
-                    }
-                }
-            },
-            onUnfollowRequest = { showUnfollowDialog = true },
+        Column(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
-        )
+        ) {
+            StoriesCarousel()
+
+            ProfileCard(
+                name = name,
+                bio = bio,
+                isFollowing = isFollowing,
+                followers = followersCount,
+                onFollowClick = {
+                    isFollowing = true
+                    followersCount += 1
+                    scope.launch {
+                        val res = snackbarHostState.showSnackbar(
+                            message = "Now following $name",
+                            actionLabel = "Undo"
+                        )
+                        if (res == SnackbarResult.ActionPerformed) {
+                            isFollowing = false
+                            followersCount = (followersCount - 1).coerceAtLeast(0)
+                        }
+                    }
+                },
+                onUnfollowRequest = { showUnfollowDialog = true },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            FollowersList(
+                followers = followerList,
+                onFollowToggle = { id ->
+                    followerList = followerList.map {
+                        if (it.id == id) it.copy(isFollowing = !it.isFollowing) else it
+                    }
+                },
+                onRemoveFollower = { id ->
+                    val removed = followerList.find { it.id == id }
+                    followerList = followerList.filterNot { it.id == id }
+
+                    scope.launch {
+                        val res = snackbarHostState.showSnackbar(
+                            message = "${removed?.name} removed",
+                            actionLabel = "Undo"
+                        )
+                        if (res == SnackbarResult.ActionPerformed && removed != null) {
+                            followerList = followerList + removed
+                        }
+                    }
+                }
+            )
+        }
     }
 }
-
 
 @Composable
 fun ProfileCard(
@@ -136,7 +163,7 @@ fun ProfileCard(
 
     Box(
         modifier = modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.Center
     ) {
@@ -195,10 +222,112 @@ fun ProfileCard(
     }
 }
 
-@Preview(showBackground = true,
-    showSystemUi = true)
 @Composable
-fun GreetingPreview() {
+fun StoriesCarousel() {
+    LazyRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp)
+    ) {
+        items(10) { index ->
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Image(
+                    painter = painterResource(id = R.drawable.avatar),
+                    contentDescription = "Story $index",
+                    modifier = Modifier
+                        .size(60.dp)
+                        .clip(CircleShape)
+                        .background(Color.LightGray)
+                )
+                Text("Story $index", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FollowersList(
+    followers: List<Follower>,
+    onFollowToggle: (Int) -> Unit,
+    onRemoveFollower: (Int) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(bottom = 8.dp)
+    ) {
+        items(followers.size) { index ->
+            val follower = followers[index]
+            SwipeToDismissBox(
+                state = rememberSwipeToDismissBoxState(confirmValueChange = {
+                    if (it == SwipeToDismissBoxValue.EndToStart) {
+                        onRemoveFollower(follower.id)
+                        true
+                    } else false
+                }),
+                backgroundContent = {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Red),
+                        contentAlignment = Alignment.CenterEnd
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Delete",
+                            tint = Color.White,
+                            modifier = Modifier.padding(end = 24.dp)
+                        )
+                    }
+                },
+                content = {
+                    FollowerItem(
+                        follower = follower,
+                        onFollowToggle = { onFollowToggle(follower.id) }
+                    )
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun FollowerItem(
+    follower: Follower,
+    onFollowToggle: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Image(
+                painter = painterResource(id = R.drawable.avatar),
+                contentDescription = "Follower avatar",
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(follower.name)
+        }
+
+        OutlinedButton(onClick = onFollowToggle) {
+            Text(if (follower.isFollowing) "Unfollow" else "Follow")
+        }
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+fun PreviewAll() {
     ProfileCardTheme {
         ProfileScreen(
             screenTitle = "Profile",
