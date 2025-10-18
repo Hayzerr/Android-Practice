@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -127,17 +128,17 @@ fun ProfileScreen(
                         if (it.id == id) it.copy(isFollowing = !it.isFollowing) else it
                     }
                 },
-                onRemoveFollower = { id ->
-                    val removed = followerList.find { it.id == id }
-                    followerList = followerList.filterNot { it.id == id }
+                onRemoveFollower = { removed ->
+                    val oldList = followerList
+                    followerList = followerList - removed
 
                     scope.launch {
                         val res = snackbarHostState.showSnackbar(
-                            message = "${removed?.name} removed",
+                            message = "${removed.name} removed",
                             actionLabel = "Undo"
                         )
-                        if (res == SnackbarResult.ActionPerformed && removed != null) {
-                            followerList = followerList + removed
+                        if (res == SnackbarResult.ActionPerformed) {
+                            followerList = oldList
                         }
                     }
                 }
@@ -252,22 +253,31 @@ fun StoriesCarousel() {
 fun FollowersList(
     followers: List<Follower>,
     onFollowToggle: (Int) -> Unit,
-    onRemoveFollower: (Int) -> Unit
+    onRemoveFollower: (Follower) -> Unit
 ) {
+    val scope = rememberCoroutineScope()
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(bottom = 8.dp)
     ) {
-        items(followers.size) { index ->
-            val follower = followers[index]
-            SwipeToDismissBox(
-                state = rememberSwipeToDismissBoxState(confirmValueChange = {
-                    if (it == SwipeToDismissBoxValue.EndToStart) {
-                        onRemoveFollower(follower.id)
+        items(
+            items = followers,
+            key = { it.id }
+        ) { follower ->
+
+            val dismissState = rememberSwipeToDismissBoxState(
+                confirmValueChange = { value ->
+                    if (value == SwipeToDismissBoxValue.EndToStart) {
+                        scope.launch { onRemoveFollower(follower) }
                         true
                     } else false
-                }),
+                }
+            )
+
+            SwipeToDismissBox(
+                state = dismissState,
                 backgroundContent = {
                     Box(
                         modifier = Modifier
