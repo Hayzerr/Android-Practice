@@ -5,217 +5,175 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.profilecard.ui.theme.ProfileCardTheme
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
+
+data class Follower(val id: Int, val name: String, val isFollowing: Boolean)
+
+class ProfileViewModel : androidx.lifecycle.ViewModel() {
+    var name by mutableStateOf("Bolashak Kulmukhambetov")
+    var bio by mutableStateOf("Android Developer")
+
+    var followers by mutableStateOf(List(8) { i -> Follower(i, "Follower $i", false) })
+        internal set
+
+    fun toggleFollow(id: Int) {
+        followers = followers.map { if (it.id == id) it.copy(isFollowing = !it.isFollowing) else it }
+    }
+
+    fun removeFollower(f: Follower) { followers = followers - f }
+
+    fun addFollower() {
+        val nextId = (followers.maxOfOrNull { it.id } ?: -1) + 1
+        followers = followers + Follower(nextId, "Follower $nextId", false)
+    }
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            ProfileCardTheme {
-                ProfileScreen(
-                    screenTitle = "Profile",
-                    name = "Bolashak Kulmukhambetov",
-                    bio = "Android Developer"
-                )
+            MaterialTheme {
+                val nav = rememberNavController()
+                val vm: ProfileViewModel = viewModel()
+                AppNavHost(nav, vm)
             }
         }
     }
 }
 
-data class Follower(val id: Int, val name: String, val isFollowing: Boolean)
-
 @Composable
-fun ProfileScreen(
-    screenTitle: String,
-    name: String,
-    bio: String
-) {
-    val snackbarHostState = remember { SnackbarHostState() }
+fun AppNavHost(nav: NavHostController, vm: ProfileViewModel) {
+    NavHost(navController = nav, startDestination = "home") {
+        composable("home") { HomeScreen(nav) }
+        composable("profile") { ProfileScreen(nav, vm) }
+        composable("editProfile") { EditProfileScreen(nav, vm) }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HomeScreen(nav: NavHostController) {
+    Scaffold(
+        topBar = { CenterAlignedTopAppBar(title = { Text("Home") }) }
+    ) { p ->
+        Box(Modifier.padding(p).fillMaxSize(), contentAlignment = Alignment.Center) {
+            Button(onClick = { nav.navigate("profile") }) { Text("Go to Profile") }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ProfileScreen(nav: NavHostController, vm: ProfileViewModel) {
+    val snackbarHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-
-    var isFollowing by rememberSaveable { mutableStateOf(false) }
-    var followersCount by rememberSaveable { mutableStateOf(100) }
-    var showUnfollowDialog by rememberSaveable { mutableStateOf(false) }
-
-    var followerList by rememberSaveable {
-        mutableStateOf(List(10) { i -> Follower(i, "Follower $i", isFollowing = false) })
-    }
-
-    if (showUnfollowDialog) {
-        AlertDialog(
-            onDismissRequest = { showUnfollowDialog = false },
-            title = { Text("Unfollow $name?") },
-            text = { Text("You will stop seeing updates from this profile.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (isFollowing) {
-                        isFollowing = false
-                        followersCount = (followersCount - 1).coerceAtLeast(0)
-                    }
-                    showUnfollowDialog = false
-                }) { Text("Unfollow") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showUnfollowDialog = false }) { Text("Cancel") }
-            }
-        )
-    }
 
     Scaffold(
         topBar = {
-            @OptIn(ExperimentalMaterial3Api::class)
-            CenterAlignedTopAppBar(title = { Text(screenTitle) })
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize()
-        ) {
-            StoriesCarousel()
-
-            ProfileCard(
-                name = name,
-                bio = bio,
-                isFollowing = isFollowing,
-                followers = followersCount,
-                onFollowClick = {
-                    isFollowing = true
-                    followersCount += 1
-                    scope.launch {
-                        val res = snackbarHostState.showSnackbar(
-                            message = "Now following $name",
-                            actionLabel = "Undo"
-                        )
-                        if (res == SnackbarResult.ActionPerformed) {
-                            isFollowing = false
-                            followersCount = (followersCount - 1).coerceAtLeast(0)
-                        }
-                    }
-                },
-                onUnfollowRequest = { showUnfollowDialog = true },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            FollowersList(
-                followers = followerList,
-                onFollowToggle = { id ->
-                    followerList = followerList.map {
-                        if (it.id == id) it.copy(isFollowing = !it.isFollowing) else it
-                    }
-                },
-                onRemoveFollower = { removed ->
-                    val oldList = followerList
-                    followerList = followerList - removed
-
-                    scope.launch {
-                        val res = snackbarHostState.showSnackbar(
-                            message = "${removed.name} removed",
-                            actionLabel = "Undo"
-                        )
-                        if (res == SnackbarResult.ActionPerformed) {
-                            followerList = oldList
-                        }
-                    }
+            CenterAlignedTopAppBar(
+                title = { Text("Profile") },
+                actions = {
+                    TextButton(onClick = { nav.navigate("editProfile") }) { Text("Edit") }
                 }
             )
+        },
+        snackbarHost = { SnackbarHost(snackbarHost) },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(onClick = { vm.addFollower() }) { Text("Add follower") }
         }
-    }
-}
-
-@Composable
-fun ProfileCard(
-    name: String,
-    bio: String,
-    isFollowing: Boolean,
-    followers: Int,
-    onFollowClick: () -> Unit,
-    onUnfollowRequest: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val followColor by animateColorAsState(
-        targetValue = if (isFollowing) Color.Red else Color.White,
-        label = "followColor"
-    )
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background),
-        contentAlignment = Alignment.Center
-    ) {
-        Card(
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = Color.Cyan),
-            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+    ) { inner ->
+        Column(
+            Modifier
+                .padding(inner)
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            ProfileHeader(name = vm.name, bio = vm.bio, followersCount = vm.followers.size)
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Image(
-                    painter = painterResource(id = R.drawable.avatar),
-                    contentDescription = "Avatar",
-                    modifier = Modifier
-                        .size(100.dp)
-                        .clip(CircleShape)
-                )
+                items(
+                    items = vm.followers,
+                    key = { it.id }
+                ) { f ->
+                    val dismissState = rememberSwipeToDismissBoxState(
+                        confirmValueChange = { v ->
+                            if (v == SwipeToDismissBoxValue.EndToStart) {
+                                val old = vm.followers
+                                vm.removeFollower(f)
+                                scope.launch {
+                                    val res = snackbarHost.showSnackbar("${f.name} removed", "Undo")
+                                    if (res == SnackbarResult.ActionPerformed) {
+                                        vm.followers = old
+                                    }
+                                }
+                                true
+                            } else false
+                        }
+                    )
 
-                Spacer(Modifier.height(8.dp))
-
-                Text(name, style = MaterialTheme.typography.titleMedium)
-                Text(bio, style = MaterialTheme.typography.bodyMedium)
-
-                Text(
-                    modifier = Modifier
-                        .padding(top = 8.dp)
-                        .fillMaxWidth(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.Gray,
-                    textAlign = TextAlign.Center,
-                    text = "$followers Followers"
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                OutlinedButton(
-                    onClick = {
-                        if (isFollowing) onUnfollowRequest() else onFollowClick()
-                    },
-                    colors = ButtonDefaults.outlinedButtonColors(containerColor = followColor)
-                ) {
-                    Text(
-                        if (isFollowing) "Unfollow" else "Follow",
-                        color = if (isFollowing) Color.White else Color.Black
+                    SwipeToDismissBox(
+                        state = dismissState,
+                        enableDismissFromStartToEnd = false,
+                        backgroundContent = {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Red),
+                                contentAlignment = Alignment.CenterEnd
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = "Delete",
+                                    tint = Color.White,
+                                    modifier = Modifier.padding(end = 20.dp)
+                                )
+                            }
+                        },
+                        content = {
+                            FollowerRow(
+                                follower = f,
+                                onFollowToggle = {
+                                    vm.toggleFollow(f.id)
+                                    scope.launch {
+                                        snackbarHost.showSnackbar(
+                                            if (f.isFollowing) "Unfollowed ${f.name}"
+                                            else "Followed ${f.name}"
+                                        )
+                                    }
+                                }
+                            )
+                        }
                     )
                 }
             }
@@ -224,25 +182,29 @@ fun ProfileCard(
 }
 
 @Composable
-fun StoriesCarousel() {
-    LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp)
+private fun ProfileHeader(name: String, bio: String, followersCount: Int) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 2.dp,
+        shape = MaterialTheme.shapes.large
     ) {
-        items(10) { index ->
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Image(
-                    painter = painterResource(id = R.drawable.avatar),
-                    contentDescription = "Story $index",
-                    modifier = Modifier
-                        .size(60.dp)
-                        .clip(CircleShape)
-                        .background(Color.LightGray)
-                )
-                Text("Story $index", style = MaterialTheme.typography.bodySmall)
+        Row(
+            Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.AccountCircle,
+                contentDescription = "Avatar",
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+            )
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(name, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(bio, style = MaterialTheme.typography.bodyMedium, color = Color.Gray, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(4.dp))
+                Text("$followersCount followers", style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -250,99 +212,90 @@ fun StoriesCarousel() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FollowersList(
-    followers: List<Follower>,
-    onFollowToggle: (Int) -> Unit,
-    onRemoveFollower: (Follower) -> Unit
-) {
-    val scope = rememberCoroutineScope()
+fun EditProfileScreen(nav: NavHostController, vm: ProfileViewModel) {
+    var name by remember { mutableStateOf(TextFieldValue(vm.name)) }
+    var bio by remember { mutableStateOf(TextFieldValue(vm.bio)) }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(bottom = 8.dp)
-    ) {
-        items(
-            items = followers,
-            key = { it.id }
-        ) { follower ->
-
-            val dismissState = rememberSwipeToDismissBoxState(
-                confirmValueChange = { value ->
-                    if (value == SwipeToDismissBoxValue.EndToStart) {
-                        scope.launch { onRemoveFollower(follower) }
-                        true
-                    } else false
-                }
-            )
-
-            SwipeToDismissBox(
-                state = dismissState,
-                backgroundContent = {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Red),
-                        contentAlignment = Alignment.CenterEnd
-                    ) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "Delete",
-                            tint = Color.White,
-                            modifier = Modifier.padding(end = 24.dp)
-                        )
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("Edit Profile") },
+                navigationIcon = {
+                    IconButton(onClick = { nav.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
-                },
-                content = {
-                    FollowerItem(
-                        follower = follower,
-                        onFollowToggle = { onFollowToggle(follower.id) }
-                    )
                 }
             )
+        }
+    ) { inner ->
+        Column(
+            Modifier
+                .padding(inner)
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedTextField(
+                value = name,
+                onValueChange = {
+                    name = it
+                    vm.name = it.text
+                },
+                label = { Text("Name") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = bio,
+                onValueChange = {
+                    bio = it
+                    vm.bio = it.text
+                },
+                label = { Text("Bio") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Button(
+                onClick = { nav.popBackStack() },
+                modifier = Modifier.align(Alignment.End)
+            ) { Text("Save") }
         }
     }
 }
 
 @Composable
-fun FollowerItem(
+fun FollowerRow(
     follower: Follower,
     onFollowToggle: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+    val container by animateColorAsState(
+        if (follower.isFollowing) Color(0xFFE57373) else Color(0xFFE0E0E0),
+        label = "followColorAnim"
+    )
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        tonalElevation = 1.dp
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Image(
-                painter = painterResource(id = R.drawable.avatar),
-                contentDescription = "Follower avatar",
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-            )
-            Spacer(Modifier.width(12.dp))
-            Text(follower.name)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.AccountCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(follower.name, style = MaterialTheme.typography.bodyLarge)
+            }
+            Button(
+                onClick = onFollowToggle,
+                colors = ButtonDefaults.buttonColors(containerColor = container)
+            ) {
+                Text(if (follower.isFollowing) "Unfollow" else "Follow")
+            }
         }
-
-        OutlinedButton(onClick = onFollowToggle) {
-            Text(if (follower.isFollowing) "Unfollow" else "Follow")
-        }
-    }
-}
-
-@Preview(showBackground = true, showSystemUi = true)
-@Composable
-fun PreviewAll() {
-    ProfileCardTheme {
-        ProfileScreen(
-            screenTitle = "Profile",
-            name = "Bolashak Kulmukhambetov",
-            bio = "Android Developer"
-        )
     }
 }
