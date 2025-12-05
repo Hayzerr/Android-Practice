@@ -5,11 +5,36 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -17,14 +42,44 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -36,9 +91,25 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import androidx.room.*
+import androidx.room.Dao
+import androidx.room.Database
+import androidx.room.Delete
+import androidx.room.Entity
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.PrimaryKey
+import androidx.room.Query
+import androidx.room.Room
+import androidx.room.RoomDatabase
+import androidx.room.Update
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.eygraber.compose.placeholder.PlaceholderHighlight
+import com.eygraber.compose.placeholder.material3.placeholder
+import com.eygraber.compose.placeholder.material3.shimmer
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -46,22 +117,22 @@ import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.GET
 
-// shimmer/placeholder imports (eygraber fork)
-import com.eygraber.compose.placeholder.PlaceholderHighlight
-import com.eygraber.compose.placeholder.material3.placeholder
-import com.eygraber.compose.placeholder.material3.shimmer
+data class Profile(
+    val name: String,
+    val bio: String
+)
 
-// -------------------- domain/db/api as-is --------------------
-
+@Immutable
 data class Follower(
     val id: Int,
     val name: String,
     val isFollowing: Boolean
 )
 
-data class Profile(
-    val name: String,
-    val bio: String
+@Immutable
+data class ProfileStats(
+    val followersCount: Int,
+    val followingCount: Int
 )
 
 @Entity(tableName = "followers")
@@ -240,13 +311,11 @@ class ProfileViewModel(
     var followers by mutableStateOf<List<Follower>>(emptyList())
         internal set
 
-    // -------- animation states --------
     var isLoading by mutableStateOf(true)
         private set
 
     var isSyncing by mutableStateOf(false)
         private set
-    // ----------------------------------
 
     init {
         viewModelScope.launch {
@@ -300,8 +369,6 @@ class ProfileViewModel(
         }
     }
 }
-
-// -------------------- Activity / nav as-is --------------------
 
 class MainActivity : ComponentActivity() {
 
@@ -359,11 +426,13 @@ fun AppNavHost(nav: NavHostController, vm: ProfileViewModel) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(nav: NavHostController) {
     Scaffold(
-        topBar = { @OptIn(ExperimentalMaterial3Api::class)
-        CenterAlignedTopAppBar(title = { Text("Home") }) }
+        topBar = {
+            CenterAlignedTopAppBar(title = { Text("Home") })
+        }
     ) { p ->
         Box(
             Modifier
@@ -376,13 +445,21 @@ fun HomeScreen(nav: NavHostController) {
     }
 }
 
-// -------------------- Profile screen with animations --------------------
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(nav: NavHostController, vm: ProfileViewModel) {
     val snackbarHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    val stats by remember {
+        derivedStateOf {
+            val list = vm.followers
+            ProfileStats(
+                followersCount = list.size,
+                followingCount = list.count { it.isFollowing }
+            )
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -428,12 +505,11 @@ fun ProfileScreen(nav: NavHostController, vm: ProfileViewModel) {
             ProfileHeader(
                 name = vm.name,
                 bio = vm.bio,
-                followersCount = vm.followers.size,
+                stats = stats,
                 isLoading = vm.isLoading,
                 isSyncing = vm.isSyncing
             )
 
-            // timeline slide-in cards
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -445,8 +521,7 @@ fun ProfileScreen(nav: NavHostController, vm: ProfileViewModel) {
 
                     var itemVisible by remember { mutableStateOf(false) }
                     LaunchedEffect(f.id) {
-                        // небольшая ступенька по времени для каскадного появления
-                        kotlinx.coroutines.delay(index * 40L)
+                        delay(index * 40L)
                         itemVisible = true
                     }
 
@@ -516,9 +591,8 @@ fun ProfileScreen(nav: NavHostController, vm: ProfileViewModel) {
                     }
                 }
 
-                // если грузимся — рисуем несколько shimmer-строк
                 if (vm.isLoading) {
-                    items(6) { _ ->
+                    items(6) { _: Int ->
                         ShimmerFollowerRow()
                     }
                 }
@@ -531,21 +605,52 @@ fun ProfileScreen(nav: NavHostController, vm: ProfileViewModel) {
 private fun ProfileHeader(
     name: String,
     bio: String,
-    followersCount: Int,
+    stats: ProfileStats,
     isLoading: Boolean,
     isSyncing: Boolean
 ) {
-    // 1) avatar scale during sync + bonus spring bounce
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 2.dp,
+        shape = MaterialTheme.shapes.large
+    ) {
+        Row(
+            Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ProfileAvatar(
+                isLoading = isLoading,
+                isSyncing = isSyncing
+            )
+
+            Spacer(Modifier.width(16.dp))
+
+            ProfileInfo(
+                name = name,
+                bio = bio,
+                stats = stats,
+                isLoading = isLoading,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProfileAvatar(
+    isLoading: Boolean,
+    isSyncing: Boolean,
+    modifier: Modifier = Modifier
+) {
     val avatarScale by animateFloatAsState(
         targetValue = if (isSyncing) 1.12f else 1f,
         animationSpec = spring(
-            dampingRatio = 0.45f, // больше bounce
+            dampingRatio = 0.45f,
             stiffness = Spring.StiffnessLow
         ),
         label = "avatarScale"
     )
 
-    // 2) pulse online indicator
     val infinite = rememberInfiniteTransition(label = "onlinePulse")
     val pulseScale by infinite.animateFloat(
         initialValue = 0.8f,
@@ -566,7 +671,39 @@ private fun ProfileHeader(
         label = "pulseAlpha"
     )
 
-    // 3) fade-in stats on load
+    Box(modifier = modifier) {
+        Icon(
+            imageVector = Icons.Default.AccountCircle,
+            contentDescription = "Avatar",
+            modifier = Modifier
+                .size(64.dp)
+                .scale(avatarScale)
+                .clip(CircleShape)
+                .placeholder(
+                    visible = isLoading,
+                    highlight = PlaceholderHighlight.shimmer()
+                )
+        )
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .align(Alignment.BottomEnd)
+                .scale(pulseScale)
+                .alpha(pulseAlpha)
+                .clip(CircleShape)
+                .background(Color(0xFF4CAF50))
+        )
+    }
+}
+
+@Composable
+private fun ProfileInfo(
+    name: String,
+    bio: String,
+    stats: ProfileStats,
+    isLoading: Boolean,
+    modifier: Modifier = Modifier
+) {
     var statsVisible by remember { mutableStateOf(false) }
     LaunchedEffect(isLoading) {
         if (!isLoading) statsVisible = true
@@ -577,81 +714,43 @@ private fun ProfileHeader(
         label = "statsAlpha"
     )
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        tonalElevation = 2.dp,
-        shape = MaterialTheme.shapes.large
-    ) {
-        Row(
-            Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box {
-                Icon(
-                    imageVector = Icons.Default.AccountCircle,
-                    contentDescription = "Avatar",
-                    modifier = Modifier
-                        .size(64.dp)
-                        .scale(avatarScale)
-                        .clip(CircleShape)
-                        .placeholder(
-                            visible = isLoading,
-                            highlight = PlaceholderHighlight.shimmer()
-                        )
+    Column(modifier) {
+        Text(
+            name,
+            style = MaterialTheme.typography.titleLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.placeholder(
+                visible = isLoading,
+                highlight = PlaceholderHighlight.shimmer()
+            )
+        )
+        Text(
+            bio,
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.Gray,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.placeholder(
+                visible = isLoading,
+                highlight = PlaceholderHighlight.shimmer()
+            )
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "${stats.followersCount} followers • ${stats.followingCount} following",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier
+                .alpha(statsAlpha)
+                .placeholder(
+                    visible = isLoading,
+                    highlight = PlaceholderHighlight.shimmer()
                 )
-                // online dot
-                Box(
-                    modifier = Modifier
-                        .size(12.dp)
-                        .align(Alignment.BottomEnd)
-                        .scale(pulseScale)
-                        .alpha(pulseAlpha)
-                        .clip(CircleShape)
-                        .background(Color(0xFF4CAF50))
-                )
-            }
-
-            Spacer(Modifier.width(16.dp))
-
-            Column(Modifier.weight(1f)) {
-                Text(
-                    name,
-                    style = MaterialTheme.typography.titleLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.placeholder(
-                        visible = isLoading,
-                        highlight = PlaceholderHighlight.shimmer()
-                    )
-                )
-                Text(
-                    bio,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.Gray,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.placeholder(
-                        visible = isLoading,
-                        highlight = PlaceholderHighlight.shimmer()
-                    )
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "$followersCount followers",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier
-                        .alpha(statsAlpha)
-                        .placeholder(
-                            visible = isLoading,
-                            highlight = PlaceholderHighlight.shimmer()
-                        )
-                )
-            }
-        }
+        )
+        Spacer(Modifier.height(4.dp))
+        RecompositionCounter(label = "Header")
     }
 }
-
-// -------------------- follower rows --------------------
 
 @Composable
 fun FollowerRow(
@@ -660,60 +759,88 @@ fun FollowerRow(
     isLoading: Boolean
 ) {
     val container by animateColorAsState(
-        if (follower.isFollowing) Color(0xFFE57373) else Color(0xFFE0E0E0),
-        animationSpec = tween(350),
+        if (follower.isFollowing) Color(0xFF81C784) else Color(0xFFE0E0E0),
+        animationSpec = tween(250),
         label = "followColorAnim"
     )
+
+    val context = LocalContext.current
+    val avatarUrl = remember(follower.id) {
+        "https://api.dicebear.com/9.x/identicon/png?seed=${follower.id}"
+    }
+    val imageRequest = remember(avatarUrl) {
+        ImageRequest.Builder(context)
+            .data(avatarUrl)
+            .crossfade(true)
+            .build()
+    }
 
     Surface(
         shape = MaterialTheme.shapes.medium,
         tonalElevation = 1.dp
     ) {
-        Row(
+        Column(
             Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .padding(12.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.AccountCircle,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .placeholder(
-                            visible = isLoading,
-                            highlight = PlaceholderHighlight.shimmer()
-                        )
-                )
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    follower.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.placeholder(
-                        visible = isLoading,
-                        highlight = PlaceholderHighlight.shimmer()
-                    )
-                )
-            }
-
-            // чуть более "пружинящая" кнопка
-            val scale by animateFloatAsState(
-                targetValue = if (follower.isFollowing) 1.03f else 1f,
-                animationSpec = spring(
-                    dampingRatio = 0.6f,
-                    stiffness = Spring.StiffnessMediumLow
-                ),
-                label = "followBtnScale"
-            )
-
-            Button(
-                onClick = onFollowToggle,
-                colors = ButtonDefaults.buttonColors(containerColor = container),
-                modifier = Modifier.scale(scale)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(if (follower.isFollowing) "Unfollow" else "Follow")
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AsyncImage(
+                        model = imageRequest,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .placeholder(
+                                visible = isLoading,
+                                highlight = PlaceholderHighlight.shimmer()
+                            )
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            follower.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.placeholder(
+                                visible = isLoading,
+                                highlight = PlaceholderHighlight.shimmer()
+                            )
+                        )
+                        RecompositionCounter(
+                            label = "Row ${follower.id}"
+                        )
+                    }
+                }
+
+                val scale by animateFloatAsState(
+                    targetValue = if (follower.isFollowing) 1.03f else 1f,
+                    animationSpec = spring(
+                        dampingRatio = 0.6f,
+                        stiffness = Spring.StiffnessMediumLow
+                    ),
+                    label = "followBtnScale"
+                )
+
+                Button(
+                    onClick = onFollowToggle,
+                    colors = ButtonDefaults.buttonColors(containerColor = container),
+                    modifier = Modifier
+                        .scale(scale)
+                        .height(40.dp)
+                        .defaultMinSize(minWidth = 110.dp)
+                ) {
+                    Text(if (follower.isFollowing) "Following" else "Follow")
+                }
             }
         }
     }
@@ -768,8 +895,7 @@ private fun ShimmerFollowerRow() {
     }
 }
 
-// -------------------- edit profile as-is --------------------
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditProfileScreen(nav: NavHostController, vm: ProfileViewModel) {
     var name by remember { mutableStateOf(TextFieldValue(vm.name)) }
@@ -778,7 +904,7 @@ fun EditProfileScreen(nav: NavHostController, vm: ProfileViewModel) {
 
     Scaffold(
         topBar = {
-            @OptIn(ExperimentalMaterial3Api::class) CenterAlignedTopAppBar(
+            CenterAlignedTopAppBar(
                 title = { Text("Edit Profile") },
                 navigationIcon = {
                     IconButton(onClick = { nav.popBackStack() }) {
@@ -818,6 +944,20 @@ fun EditProfileScreen(nav: NavHostController, vm: ProfileViewModel) {
             ) { Text("Save") }
         }
     }
+}
+
+@Composable
+fun RecompositionCounter(
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    var count by remember { mutableIntStateOf(0) }
+    SideEffect { count++ }
+    Text(
+        text = "$label recompositions: $count",
+        style = MaterialTheme.typography.labelSmall,
+        modifier = modifier
+    )
 }
 
 @Preview(showBackground = true)
